@@ -2009,10 +2009,21 @@ pub fn writeAtom(self: *MachO, atom: *Atom, match: MatchingSection) !void {
     try atom.resolveRelocs(self);
     if (self.base.mach_port) |port| {
         log.warn("port = {}", .{port});
-        const addr: u64 = 0x100054000;
+        const addr: u64 = 0x100052000;
         var buf: [@sizeOf(u64)]u8 = undefined;
         const out = try std.os.darwin.vmRead(port, addr, &buf);
         log.warn("value at 0x{x}: 0x{x}", .{ addr, mem.readIntLittle(u64, out[0..@sizeOf(u64)]) });
+
+        const kern_res = std.os.darwin.mach_vm_protect(
+            port,
+            sym.n_value,
+            atom.code.items.len,
+            @boolToInt(false),
+            std.macho.VM_PROT_READ | std.macho.VM_PROT_WRITE | std.macho.VM_PROT_EXECUTE,
+        );
+        if (kern_res != 0) {
+            log.info("mach_vm_protect failed with error: {d}", .{kern_res});
+        }
 
         const nwritten = try std.os.darwin.vmWrite(
             port,
@@ -4021,45 +4032,46 @@ fn placeDecl(self: *MachO, decl: *Module.Decl, code_len: usize) !*macho.nlist_64
     }
     const match = decl_ptr.*.?;
 
-    if (decl.link.macho.size != 0) {
-        const capacity = decl.link.macho.capacity(self.*);
-        const need_realloc = code_len > capacity or !mem.isAlignedGeneric(u64, symbol.n_value, required_alignment);
+    {
+        // if (decl.link.macho.size != 0) {
+        //     const capacity = decl.link.macho.capacity(self.*);
+        //     const need_realloc = code_len > capacity or !mem.isAlignedGeneric(u64, symbol.n_value, required_alignment);
 
-        if (need_realloc) {
-            const vaddr = try self.growAtom(&decl.link.macho, code_len, required_alignment, match);
+        //     if (need_realloc) {
+        //         const vaddr = try self.growAtom(&decl.link.macho, code_len, required_alignment, match);
 
-            log.debug("growing {s} and moving from 0x{x} to 0x{x}", .{ sym_name, symbol.n_value, vaddr });
-            log.debug("  (required alignment 0x{x})", .{required_alignment});
+        //         log.debug("growing {s} and moving from 0x{x} to 0x{x}", .{ sym_name, symbol.n_value, vaddr });
+        //         log.debug("  (required alignment 0x{x})", .{required_alignment});
 
-            if (vaddr != symbol.n_value) {
-                log.debug(" (writing new GOT entry)", .{});
-                const got_index = self.got_entries_table.get(.{ .local = decl.link.macho.local_sym_index }).?;
-                const got_atom = self.got_entries.items[got_index].atom;
-                const got_sym = &self.locals.items[got_atom.local_sym_index];
-                const got_vaddr = try self.allocateAtom(got_atom, @sizeOf(u64), 8, .{
-                    .seg = self.data_const_segment_cmd_index.?,
-                    .sect = self.got_section_index.?,
-                });
-                got_sym.n_value = got_vaddr;
-                got_sym.n_sect = @intCast(u8, self.section_ordinals.getIndex(.{
-                    .seg = self.data_const_segment_cmd_index.?,
-                    .sect = self.got_section_index.?,
-                }).? + 1);
-                got_atom.dirty = true;
-            }
+        //         if (vaddr != symbol.n_value) {
+        //             log.debug(" (writing new GOT entry)", .{});
+        //             const got_index = self.got_entries_table.get(.{ .local = decl.link.macho.local_sym_index }).?;
+        //             const got_atom = self.got_entries.items[got_index].atom;
+        //             const got_sym = &self.locals.items[got_atom.local_sym_index];
+        //             const got_vaddr = try self.allocateAtom(got_atom, @sizeOf(u64), 8, .{
+        //                 .seg = self.data_const_segment_cmd_index.?,
+        //                 .sect = self.got_section_index.?,
+        //             });
+        //             got_sym.n_value = got_vaddr;
+        //             got_sym.n_sect = @intCast(u8, self.section_ordinals.getIndex(.{
+        //                 .seg = self.data_const_segment_cmd_index.?,
+        //                 .sect = self.got_section_index.?,
+        //             }).? + 1);
+        //             got_atom.dirty = true;
+        //         }
 
-            symbol.n_value = vaddr;
-        } else if (code_len < decl.link.macho.size) {
-            self.shrinkAtom(&decl.link.macho, code_len, match);
-        }
-        decl.link.macho.size = code_len;
-        decl.link.macho.dirty = true;
+        //         symbol.n_value = vaddr;
+        //     } else if (code_len < decl.link.macho.size) {
+        //         self.shrinkAtom(&decl.link.macho, code_len, match);
+        //     }
+        //     decl.link.macho.size = code_len;
+        //     decl.link.macho.dirty = true;
 
-        symbol.n_strx = try self.makeString(sym_name);
-        symbol.n_type = macho.N_SECT;
-        symbol.n_sect = @intCast(u8, self.text_section_index.?) + 1;
-        symbol.n_desc = 0;
-    } else {
+        //     symbol.n_strx = try self.makeString(sym_name);
+        //     symbol.n_type = macho.N_SECT;
+        //     symbol.n_sect = @intCast(u8, self.text_section_index.?) + 1;
+        //     symbol.n_desc = 0;
+        // } else {
         const name_str_index = try self.makeString(sym_name);
         const addr = try self.allocateAtom(&decl.link.macho, code_len, required_alignment, match);
 
@@ -4359,7 +4371,7 @@ fn populateMissingMetadata(self: *MachO) !void {
                     .vmsize = needed_size,
                     .filesize = needed_size,
                     .maxprot = macho.VM_PROT_READ | macho.VM_PROT_EXECUTE | macho.VM_PROT_WRITE,
-                    .initprot = macho.VM_PROT_READ | macho.VM_PROT_EXECUTE | macho.VM_PROT_WRITE,
+                    .initprot = macho.VM_PROT_READ | macho.VM_PROT_EXECUTE,
                 },
             },
         });
@@ -4463,7 +4475,7 @@ fn populateMissingMetadata(self: *MachO) !void {
                     .vmsize = needed_size,
                     .fileoff = fileoff,
                     .filesize = needed_size,
-                    .maxprot = macho.VM_PROT_READ | macho.VM_PROT_WRITE,
+                    .maxprot = macho.VM_PROT_READ | macho.VM_PROT_EXECUTE | macho.VM_PROT_WRITE,
                     .initprot = macho.VM_PROT_READ | macho.VM_PROT_WRITE,
                 },
             },
@@ -4512,7 +4524,7 @@ fn populateMissingMetadata(self: *MachO) !void {
                     .vmsize = needed_size,
                     .fileoff = fileoff,
                     .filesize = needed_size,
-                    .maxprot = macho.VM_PROT_READ | macho.VM_PROT_WRITE,
+                    .maxprot = macho.VM_PROT_READ | macho.VM_PROT_EXECUTE | macho.VM_PROT_WRITE,
                     .initprot = macho.VM_PROT_READ | macho.VM_PROT_WRITE,
                 },
             },
@@ -5193,7 +5205,7 @@ fn allocateAtom(self: *MachO, atom: *Atom, new_atom_size: u64, alignment: u64, m
     const sect = &seg.sections.items[match.sect];
     var free_list = self.atom_free_lists.get(match).?;
     const needs_padding = match.seg == self.text_segment_cmd_index.? and match.sect == self.text_section_index.?;
-    const new_atom_ideal_capacity = if (needs_padding) padToIdeal(new_atom_size) else new_atom_size;
+    // const new_atom_ideal_capacity = if (needs_padding) padToIdeal(new_atom_size) else new_atom_size;
 
     // We use these to indicate our intention to update metadata, placing the new atom,
     // and possibly removing a free list node.
@@ -5206,42 +5218,43 @@ fn allocateAtom(self: *MachO, atom: *Atom, new_atom_size: u64, alignment: u64, m
     // First we look for an appropriately sized free list node.
     // The list is unordered. We'll just take the first thing that works.
     var vaddr = blk: {
-        var i: usize = 0;
-        while (i < free_list.items.len) {
-            const big_atom = free_list.items[i];
-            // We now have a pointer to a live atom that has too much capacity.
-            // Is it enough that we could fit this new atom?
-            const sym = self.locals.items[big_atom.local_sym_index];
-            const capacity = big_atom.capacity(self.*);
-            const ideal_capacity = if (needs_padding) padToIdeal(capacity) else capacity;
-            const ideal_capacity_end_vaddr = math.add(u64, sym.n_value, ideal_capacity) catch ideal_capacity;
-            const capacity_end_vaddr = sym.n_value + capacity;
-            const new_start_vaddr_unaligned = capacity_end_vaddr - new_atom_ideal_capacity;
-            const new_start_vaddr = mem.alignBackwardGeneric(u64, new_start_vaddr_unaligned, alignment);
-            if (new_start_vaddr < ideal_capacity_end_vaddr) {
-                // Additional bookkeeping here to notice if this free list node
-                // should be deleted because the atom that it points to has grown to take up
-                // more of the extra capacity.
-                if (!big_atom.freeListEligible(self.*)) {
-                    _ = free_list.swapRemove(i);
-                } else {
-                    i += 1;
-                }
-                continue;
-            }
-            // At this point we know that we will place the new atom here. But the
-            // remaining question is whether there is still yet enough capacity left
-            // over for there to still be a free list node.
-            const remaining_capacity = new_start_vaddr - ideal_capacity_end_vaddr;
-            const keep_free_list_node = remaining_capacity >= min_text_capacity;
+        // var i: usize = 0;
+        // while (i < free_list.items.len) {
+        //     const big_atom = free_list.items[i];
+        //     // We now have a pointer to a live atom that has too much capacity.
+        //     // Is it enough that we could fit this new atom?
+        //     const sym = self.locals.items[big_atom.local_sym_index];
+        //     const capacity = big_atom.capacity(self.*);
+        //     const ideal_capacity = if (needs_padding) padToIdeal(capacity) else capacity;
+        //     const ideal_capacity_end_vaddr = math.add(u64, sym.n_value, ideal_capacity) catch ideal_capacity;
+        //     const capacity_end_vaddr = sym.n_value + capacity;
+        //     const new_start_vaddr_unaligned = capacity_end_vaddr - new_atom_ideal_capacity;
+        //     const new_start_vaddr = mem.alignBackwardGeneric(u64, new_start_vaddr_unaligned, alignment);
+        //     if (new_start_vaddr < ideal_capacity_end_vaddr) {
+        //         // Additional bookkeeping here to notice if this free list node
+        //         // should be deleted because the atom that it points to has grown to take up
+        //         // more of the extra capacity.
+        //         if (!big_atom.freeListEligible(self.*)) {
+        //             _ = free_list.swapRemove(i);
+        //         } else {
+        //             i += 1;
+        //         }
+        //         continue;
+        //     }
+        //     // At this point we know that we will place the new atom here. But the
+        //     // remaining question is whether there is still yet enough capacity left
+        //     // over for there to still be a free list node.
+        //     const remaining_capacity = new_start_vaddr - ideal_capacity_end_vaddr;
+        //     const keep_free_list_node = remaining_capacity >= min_text_capacity;
 
-            // Set up the metadata to be updated, after errors are no longer possible.
-            atom_placement = big_atom;
-            if (!keep_free_list_node) {
-                free_list_removal = i;
-            }
-            break :blk new_start_vaddr;
-        } else if (self.atoms.get(match)) |last| {
+        //     // Set up the metadata to be updated, after errors are no longer possible.
+        //     atom_placement = big_atom;
+        //     if (!keep_free_list_node) {
+        //         free_list_removal = i;
+        //     }
+        //     break :blk new_start_vaddr;
+        // } else
+        if (self.atoms.get(match)) |last| {
             const last_symbol = self.locals.items[last.local_sym_index];
             const ideal_capacity = if (needs_padding) padToIdeal(last.size) else last.size;
             const ideal_capacity_end_vaddr = last_symbol.n_value + ideal_capacity;

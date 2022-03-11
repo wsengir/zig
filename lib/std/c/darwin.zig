@@ -241,6 +241,16 @@ pub const task_vm_info = extern struct {
 };
 pub const task_vm_info_data_t = task_vm_info;
 
+pub const boolean_t = c_int;
+
+pub extern "c" fn mach_vm_protect(
+    target_task: vm_map_t,
+    address: mach_vm_address_t,
+    size: mach_vm_size_t,
+    set_maximum: boolean_t,
+    new_protection: std.macho.vm_prot_t,
+) kern_return_t;
+
 pub extern "c" fn task_info(
     target_task: task_name_t,
     flavor: task_flavor_t,
