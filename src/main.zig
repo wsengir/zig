@@ -3226,6 +3226,13 @@ fn runOrTestHotSwap(
     all_args: []const []const u8,
     runtime_args_start: ?usize,
 ) !i32 {
+    _ = gpa;
+    _ = arena;
+    _ = test_exec_args;
+    _ = self_exe_path;
+    _ = arg_mode;
+    _ = all_args;
+    _ = runtime_args_start;
     const exe_emit = comp.bin_file.options.emit.?;
     // A naive `directory.join` here will indeed get the correct path to the binary,
     // however, in the case of cwd, we actually want `./foo` so that the path can be executed.
@@ -3233,43 +3240,86 @@ fn runOrTestHotSwap(
         exe_emit.directory.path orelse ".", exe_emit.sub_path,
     });
 
-    var argv = std.ArrayList([]const u8).init(gpa);
-    defer argv.deinit();
+    // var argv = std.ArrayList([]const u8).init(gpa);
+    // defer argv.deinit();
 
-    if (test_exec_args.len == 0) {
-        // when testing pass the zig_exe_path to argv
-        if (arg_mode == .zig_test)
-            try argv.appendSlice(&[_][]const u8{
-                exe_path, self_exe_path,
-            })
-            // when running just pass the current exe
-        else
-            try argv.appendSlice(&[_][]const u8{
-                exe_path,
-            });
-    } else {
-        for (test_exec_args) |arg| {
-            if (arg) |a| {
-                try argv.append(a);
-            } else {
-                try argv.appendSlice(&[_][]const u8{
-                    exe_path, self_exe_path,
-                });
-            }
-        }
+    // if (test_exec_args.len == 0) {
+    //     // when testing pass the zig_exe_path to argv
+    //     if (arg_mode == .zig_test)
+    //         try argv.appendSlice(&[_][]const u8{
+    //             exe_path, self_exe_path,
+    //         })
+    //         // when running just pass the current exe
+    //     else
+    //         try argv.appendSlice(&[_][]const u8{
+    //             exe_path,
+    //         });
+    // } else {
+    //     for (test_exec_args) |arg| {
+    //         if (arg) |a| {
+    //             try argv.append(a);
+    //         } else {
+    //             try argv.appendSlice(&[_][]const u8{
+    //                 exe_path, self_exe_path,
+    //             });
+    //         }
+    //     }
+    // }
+    // if (runtime_args_start) |i| {
+    //     try argv.appendSlice(all_args[i..]);
+    // }
+
+    var attr: std.os.darwin.posix_spawnattr_t = undefined;
+    var res = std.os.darwin.posix_spawnattr_init(&attr);
+    defer std.os.darwin.posix_spawnattr_destroy(&attr);
+
+    switch (std.c.getErrno(res)) {
+        .SUCCESS => {},
+        .NOMEM => return error.NoMemory,
+        .INVAL => return error.InvalidValue,
+        else => unreachable,
     }
-    if (runtime_args_start) |i| {
-        try argv.appendSlice(all_args[i..]);
+
+    const flags = std.os.darwin.POSIX_SPAWN_SETSIGDEF | std.os.darwin.POSIX_SPAWN_SETSIGMASK | std.os.darwin._POSIX_SPAWN_DISABLE_ASLR;
+    res = std.os.darwin.posix_spawnattr_setflags(&attr, @intCast(c_short, flags));
+
+    switch (std.c.getErrno(res)) {
+        .SUCCESS => {},
+        .INVAL => return error.InvalidValue,
+        else => unreachable,
     }
-    const child = try std.ChildProcess.init(argv.items, arena);
 
-    child.stdin_behavior = .Inherit;
-    child.stdout_behavior = .Inherit;
-    child.stderr_behavior = .Inherit;
+    // var actions: std.os.posix_spawn_file_actions_t = undefined;
+    // res = std.os.posix_spawn_file_actions_init(&actions);
+    // defer std.os.posix_spawn_file_actions_destroy(&actions);
 
-    try child.spawn();
+    // switch (std.c.getErrno(res)) {
+    //     .SUCCESS => {},
+    //     .NOMEM => return error.NoMemory,
+    //     .INVAL => return error.InvalidValue,
+    //     else => unreachable,
+    // }
 
-    return child.pid;
+    const argv: [][*:0]const u8 = &.{};
+    const env: [][*:0]const u8 = &.{};
+    var pid: std.os.pid_t = -1;
+    res = std.os.darwin.posix_spawnp(&pid, @ptrCast([*:0]const u8, exe_path.ptr), null, &attr, argv.ptr, env.ptr);
+
+    switch (std.c.getErrno(res)) {
+        .SUCCESS => {},
+        else => return error.SpawnpFailed,
+    }
+
+    // const child = try std.ChildProcess.init(argv.items, arena);
+    // child.stdin_behavior = .Inherit;
+    // child.stdout_behavior = .Inherit;
+    // child.stderr_behavior = .Inherit;
+
+    // try child.spawn();
+
+    // return child.pid;
+
+    return pid;
 }
 
 const AfterUpdateHook = union(enum) {
