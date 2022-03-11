@@ -102,7 +102,6 @@ pub fn pageSize(task: os.mach_port_name_t) !usize {
         if (kern_res != 0) {
             log.err("task_info failed with error: {d}", .{kern_res});
         } else {
-            log.info("page_size = {x}", .{vm_info.page_size});
             return @intCast(usize, vm_info.page_size);
         }
     }

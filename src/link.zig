@@ -356,13 +356,21 @@ pub const File = struct {
                     try emit.directory.handle.copyFile(emit.sub_path, emit.directory.handle, tmp_sub_path, .{});
                     try emit.directory.handle.rename(tmp_sub_path, emit.sub_path);
 
-                    var port: std.os.darwin.mach_port_name_t = undefined;
-                    var kern_res = std.os.darwin.task_for_pid(std.os.darwin.mach_task_self(), pid, &port);
-                    if (kern_res != 0) {
-                        log.warn("task_for_pid failed: {d}", .{kern_res});
+                    if (base.mach_port == null) {
+                        var port: std.os.darwin.mach_port_name_t = undefined;
+                        var kern_res = std.os.darwin.task_for_pid(std.os.darwin.mach_task_self(), pid, &port);
+                        if (kern_res != 0) {
+                            log.warn("task_for_pid failed: {d}", .{kern_res});
+                        }
+                        log.debug("setting task with value {}", .{port});
+                        base.mach_port = port;
                     }
-                    log.warn("setting task with value {}", .{port});
-                    base.mach_port = port;
+
+                    switch (std.os.errno(std.os.darwin.ptrace(std.os.darwin.PT_ATTACHEXC, pid, null, 0))) {
+                        .SUCCESS => {},
+                        else => |errno| log.warn("ptrace failed: {s}", .{@tagName(errno)}),
+                    }
+                    log.debug("ptrace attached", .{});
                 }
                 base.file = try emit.directory.handle.createFile(emit.sub_path, .{
                     .truncate = false,
@@ -403,6 +411,22 @@ pub const File = struct {
                     const emit = base.options.emit orelse return;
                     try emit.directory.handle.copyFile(emit.sub_path, emit.directory.handle, emit.sub_path, .{});
                 }
+
+                // if (base.mach_port) |port| {
+                //     const kern_res = std.os.darwin.mach_port_deallocate(std.os.darwin.mach_task_self(), port);
+                //     if (kern_res != 0) {
+                //         log.warn("mach_port_deallocate failed: {d}", .{kern_res});
+                //     }
+                //     base.mach_port = null;
+                // }
+                if (base.child_pid) |pid| {
+                    switch (std.os.errno(std.os.darwin.ptrace(std.os.darwin.PT_DETACH, pid, null, 0))) {
+                        .SUCCESS => {},
+                        else => |errno| log.warn("ptrace failed: {s}", .{@tagName(errno)}),
+                    }
+                    log.debug("ptrace detached", .{});
+                }
+
                 f.close();
                 base.file = null;
             },

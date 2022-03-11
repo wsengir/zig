@@ -135,6 +135,11 @@ pub fn mach_task_self() callconv(.C) mach_port_t {
     return mach_task_self_;
 }
 
+pub const task_read_t = mach_port_t;
+
+pub extern "c" fn task_resume(target_task: task_read_t) kern_return_t;
+pub extern "c" fn task_suspend(target_task: task_read_t) kern_return_t;
+
 pub extern "c" fn task_for_pid(target_tport: mach_port_name_t, pid: pid_t, t: *mach_port_name_t) kern_return_t;
 pub extern "c" fn mach_vm_read(
     target_task: vm_map_read_t,
@@ -250,6 +255,8 @@ pub extern "c" fn mach_vm_protect(
     set_maximum: boolean_t,
     new_protection: std.macho.vm_prot_t,
 ) kern_return_t;
+
+pub extern "c" fn mach_port_deallocate(target_tport: mach_port_name_t, task: mach_port_name_t) kern_return_t;
 
 pub extern "c" fn task_info(
     target_task: task_name_t,
@@ -2186,3 +2193,15 @@ pub const _POSIX_SPAWN_DISABLE_ASLR: c_int = 0x0100;
 pub const POSIX_SPAWN_SETSID: c_int = 0x0400;
 pub const _POSIX_SPAWN_RESLIDE: c_int = 0x0800;
 pub const POSIX_SPAWN_CLOEXEC_DEFAULT: c_int = 0x4000;
+
+pub const PT_TRACE_ME = 0;
+pub const PT_CONTINUE = 7;
+pub const PT_KILL = 8;
+pub const PT_STEP = 9;
+pub const PT_DETACH = 11;
+pub const PT_ATTACHEXC = 14;
+pub const PT_DENY_ATTACH = 31;
+
+pub const caddr_t = ?[*]u8;
+
+pub extern "c" fn ptrace(request: c_int, pid: pid_t, addr: caddr_t, data: c_int) c_int;
