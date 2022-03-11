@@ -209,6 +209,9 @@ pub const File = struct {
     /// of this linking operation.
     lock: ?Cache.Lock = null,
 
+    child_pid: ?std.os.pid_t = null,
+    mach_port: ?std.os.darwin.mach_port_name_t = null,
+
     pub const LinkBlock = union {
         elf: Elf.TextBlock,
         coff: Coff.TextBlock,
@@ -346,6 +349,20 @@ pub const File = struct {
             .coff, .elf, .macho, .plan9 => {
                 if (base.file != null) return;
                 const emit = base.options.emit orelse return;
+                if (base.child_pid) |pid| {
+                    const tmp_sub_path = try std.fmt.allocPrint(base.allocator, "{s}-{x}", .{
+                        emit.sub_path, std.crypto.random.int(u32),
+                    });
+                    try emit.directory.handle.copyFile(emit.sub_path, emit.directory.handle, tmp_sub_path, .{});
+                    try emit.directory.handle.rename(tmp_sub_path, emit.sub_path);
+
+                    var port: std.os.darwin.mach_port_name_t = undefined;
+                    var kern_res = std.os.darwin.task_for_pid(std.os.darwin.mach_task_self(), pid, &port);
+                    if (kern_res != 0) {
+                        log.warn("task_for_pid failed: {d}", .{kern_res});
+                    }
+                    base.mach_port = port;
+                }
                 base.file = try emit.directory.handle.createFile(emit.sub_path, .{
                     .truncate = false,
                     .read = true,
