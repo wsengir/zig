@@ -124,8 +124,10 @@ pub extern "c" fn mach_host_self() mach_port_t;
 pub extern "c" fn clock_get_time(clock_serv: clock_serv_t, cur_time: *mach_timespec_t) kern_return_t;
 
 pub const vm_map_t = mach_port_t;
+pub const vm_map_read_t = mach_port_t;
 pub const mach_vm_address_t = usize;
 pub const vm_offset_t = usize;
+pub const mach_vm_size_t = u64;
 pub const mach_msg_type_number_t = natural_t;
 
 extern "c" var mach_task_self_: mach_port_t;
@@ -134,11 +136,125 @@ pub fn mach_task_self() callconv(.C) mach_port_t {
 }
 
 pub extern "c" fn task_for_pid(target_tport: mach_port_name_t, pid: pid_t, t: *mach_port_name_t) kern_return_t;
+pub extern "c" fn mach_vm_read(
+    target_task: vm_map_read_t,
+    address: mach_vm_address_t,
+    size: mach_vm_size_t,
+    data: *vm_offset_t,
+    data_cnt: *mach_msg_type_number_t,
+) kern_return_t;
 pub extern "c" fn mach_vm_write(
     target_task: vm_map_t,
     address: mach_vm_address_t,
     data: vm_offset_t,
     data_cnt: mach_msg_type_number_t,
+) kern_return_t;
+
+/// Cachability
+pub const MATTR_CACHE = 1;
+/// Migrability
+pub const MATTR_MIGRATE = 2;
+/// Replicability
+pub const MATTR_REPLICATE = 4;
+
+/// (Generic) turn attribute off
+pub const MATTR_VAL_OFF = 0;
+/// (Generic) turn attribute on
+pub const MATTR_VAL_ON = 1;
+/// (Generic) return current value
+pub const MATTR_VAL_GET = 2;
+/// Flush from all caches
+pub const MATTR_VAL_CACHE_FLUSH = 6;
+/// Flush from data caches
+pub const MATTR_VAL_DCACHE_FLUSH = 7;
+/// Flush from instruction caches
+pub const MATTR_VAL_ICACHE_FLUSH = 8;
+/// Sync I+D caches
+pub const MATTR_VAL_CACHE_SYNC = 9;
+/// Get page info (stats)
+pub const MATTR_VAL_GET_INFO = 10;
+
+pub const TASK_VM_INFO = 22;
+pub const TASK_VM_INFO_COUNT: mach_msg_type_number_t = @sizeOf(task_vm_info_data_t) / @sizeOf(natural_t);
+
+pub const task_vm_info = extern struct {
+    // virtual memory size (bytes)
+    virtual_size: mach_vm_size_t,
+    // number of memory regions
+    region_count: integer_t,
+    page_size: integer_t,
+    // resident memory size (bytes)
+    resident_size: mach_vm_size_t,
+    // peak resident size (bytes)
+    resident_size_peak: mach_vm_size_t,
+
+    device: mach_vm_size_t,
+    device_peak: mach_vm_size_t,
+    internal: mach_vm_size_t,
+    internal_peak: mach_vm_size_t,
+    external: mach_vm_size_t,
+    external_peak: mach_vm_size_t,
+    reusable: mach_vm_size_t,
+    reusable_peak: mach_vm_size_t,
+    purgeable_volatile_pmap: mach_vm_size_t,
+    purgeable_volatile_resident: mach_vm_size_t,
+    purgeable_volatile_virtual: mach_vm_size_t,
+    compressed: mach_vm_size_t,
+    compressed_peak: mach_vm_size_t,
+    compressed_lifetime: mach_vm_size_t,
+
+    // added for rev1
+    phys_footprint: mach_vm_size_t,
+
+    // added for rev2
+    min_address: mach_vm_address_t,
+    max_address: mach_vm_address_t,
+
+    // added for rev3
+    ledger_phys_footprint_peak: i64,
+    ledger_purgeable_nonvolatile: i64,
+    ledger_purgeable_novolatile_compressed: i64,
+    ledger_purgeable_volatile: i64,
+    ledger_purgeable_volatile_compressed: i64,
+    ledger_tag_network_nonvolatile: i64,
+    ledger_tag_network_nonvolatile_compressed: i64,
+    ledger_tag_network_volatile: i64,
+    ledger_tag_network_volatile_compressed: i64,
+    ledger_tag_media_footprint: i64,
+    ledger_tag_media_footprint_compressed: i64,
+    ledger_tag_media_nofootprint: i64,
+    ledger_tag_media_nofootprint_compressed: i64,
+    ledger_tag_graphics_footprint: i64,
+    ledger_tag_graphics_footprint_compressed: i64,
+    ledger_tag_graphics_nofootprint: i64,
+    ledger_tag_graphics_nofootprint_compressed: i64,
+    ledger_tag_neural_footprint: i64,
+    ledger_tag_neural_footprint_compressed: i64,
+    ledger_tag_neural_nofootprint: i64,
+    ledger_tag_neural_nofootprint_compressed: i64,
+
+    // added for rev4
+    limit_bytes_remaining: u64,
+
+    // added for rev5
+    decompressions: integer_t,
+};
+pub const task_vm_info_data_t = task_vm_info;
+
+pub extern "c" fn task_info(
+    target_task: task_name_t,
+    flavor: task_flavor_t,
+    task_info_out: task_info_t,
+    task_info_outCnt: *mach_msg_type_number_t,
+) kern_return_t;
+pub extern "c" fn _host_page_size(task: mach_port_t, size: *vm_size_t) kern_return_t;
+pub extern "c" fn vm_deallocate(target_task: vm_map_t, address: vm_address_t, size: vm_size_t) kern_return_t;
+pub extern "c" fn vm_machine_attribute(
+    target_task: vm_map_t,
+    address: vm_address_t,
+    size: vm_size_t,
+    attribute: vm_machine_attribute_t,
+    value: *vm_machine_attribute_val_t,
 ) kern_return_t;
 
 pub const sf_hdtr = extern struct {
@@ -622,6 +738,15 @@ pub const mach_timespec_t = extern struct {
 };
 pub const kern_return_t = c_int;
 pub const host_t = mach_port_t;
+pub const integer_t = c_int;
+pub const task_flavor_t = natural_t;
+pub const task_info_t = *integer_t;
+pub const task_name_t = mach_port_name_t;
+pub const vm_address_t = vm_offset_t;
+pub const vm_size_t = mach_vm_size_t;
+pub const vm_machine_attribute_t = usize;
+pub const vm_machine_attribute_val_t = isize;
+
 pub const CALENDAR_CLOCK = 1;
 
 pub const PATH_MAX = 1024;

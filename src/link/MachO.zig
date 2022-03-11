@@ -2007,18 +2007,22 @@ pub fn writeAtom(self: *MachO, atom: *Atom, match: MatchingSection) !void {
     const sym = self.locals.items[atom.local_sym_index];
     const file_offset = sect.offset + sym.n_value - sect.addr;
     try atom.resolveRelocs(self);
-    log.debug("writing atom for symbol {s} at file offset 0x{x}", .{ self.getString(sym.n_strx), file_offset });
     if (self.base.mach_port) |port| {
-        const kern_res = std.os.darwin.mach_vm_write(
+        log.warn("port = {}", .{port});
+        const addr: u64 = 0x100054000;
+        var buf: [@sizeOf(u64)]u8 = undefined;
+        const out = try std.os.darwin.vmRead(port, addr, &buf);
+        log.warn("value at 0x{x}: 0x{x}", .{ addr, mem.readIntLittle(u64, out[0..@sizeOf(u64)]) });
+
+        const nwritten = try std.os.darwin.vmWrite(
             port,
             sym.n_value,
-            @ptrToInt(atom.code.items.ptr),
-            @intCast(c_uint, atom.code.items.len),
+            atom.code.items,
+            self.base.options.target.cpu.arch,
         );
-        if (kern_res != 0) {
-            log.warn("mach_vm_write failed with error: {d}", .{kern_res});
-        }
+        log.warn("code_len = {d}, nwritten = {d}", .{ atom.code.items.len, nwritten });
     }
+    log.warn("writing atom for symbol {s} at file offset 0x{x}", .{ self.getString(sym.n_strx), file_offset });
     try self.base.file.?.pwriteAll(atom.code.items, file_offset);
 }
 
@@ -2209,7 +2213,7 @@ fn writeAtoms(self: *MachO) !void {
         // TODO handle zerofill in stage2
         // if (sect.flags == macho.S_ZEROFILL or sect.flags == macho.S_THREAD_LOCAL_ZEROFILL) continue;
 
-        log.debug("writing atoms in {s},{s}", .{ sect.segName(), sect.sectName() });
+        log.warn("writing atoms in {s},{s}", .{ sect.segName(), sect.sectName() });
 
         while (true) {
             if (atom.dirty) {
@@ -2220,10 +2224,6 @@ fn writeAtoms(self: *MachO) !void {
             if (atom.prev) |prev| {
                 atom = prev;
             } else break;
-        }
-
-        while (atom.prev) |prev| {
-            atom = prev;
         }
     }
 }
@@ -4063,8 +4063,8 @@ fn placeDecl(self: *MachO, decl: *Module.Decl, code_len: usize) !*macho.nlist_64
         const name_str_index = try self.makeString(sym_name);
         const addr = try self.allocateAtom(&decl.link.macho, code_len, required_alignment, match);
 
-        log.debug("allocated atom for {s} at 0x{x}", .{ sym_name, addr });
-        log.debug("  (required alignment 0x{x})", .{required_alignment});
+        log.warn("allocated atom for {s} at 0x{x}", .{ sym_name, addr });
+        log.warn("  (required alignment 0x{x})", .{required_alignment});
 
         errdefer self.freeAtom(&decl.link.macho, match, false);
 
@@ -4358,8 +4358,8 @@ fn populateMissingMetadata(self: *MachO) !void {
                     .vmaddr = pagezero_vmsize,
                     .vmsize = needed_size,
                     .filesize = needed_size,
-                    .maxprot = macho.VM_PROT_READ | macho.VM_PROT_EXECUTE,
-                    .initprot = macho.VM_PROT_READ | macho.VM_PROT_EXECUTE,
+                    .maxprot = macho.VM_PROT_READ | macho.VM_PROT_EXECUTE | macho.VM_PROT_WRITE,
+                    .initprot = macho.VM_PROT_READ | macho.VM_PROT_EXECUTE | macho.VM_PROT_WRITE,
                 },
             },
         });
@@ -5268,6 +5268,7 @@ fn allocateAtom(self: *MachO, atom: *Atom, new_atom_size: u64, alignment: u64, m
     }
     atom.size = new_atom_size;
     atom.alignment = align_pow;
+    atom.dirty = true;
 
     if (atom.prev) |prev| {
         prev.next = atom.next;
