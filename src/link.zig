@@ -361,6 +361,7 @@ pub const File = struct {
                     if (kern_res != 0) {
                         log.warn("task_for_pid failed: {d}", .{kern_res});
                     }
+                    log.warn("setting task with value {}", .{port});
                     base.mach_port = port;
                 }
                 base.file = try emit.directory.handle.createFile(emit.sub_path, .{
@@ -389,8 +390,8 @@ pub const File = struct {
                     // make executable, so we don't have to close it.
                     return;
                 }
-                if (comptime builtin.target.isDarwin() and builtin.target.cpu.arch == .aarch64) {
-                    if (base.options.target.cpu.arch != .aarch64) return; // If we're not targeting aarch64, nothing to do.
+                if (comptime builtin.target.isDarwin() and builtin.target.cpu.arch == .aarch64) blk: {
+                    if (base.options.target.cpu.arch != .aarch64) break :blk; // If we're not targeting aarch64, nothing to do.
                     // XNU starting with Big Sur running on arm64 is caching inodes of running binaries.
                     // Any change to the binary will effectively invalidate the kernel's cache
                     // resulting in a SIGKILL on each subsequent run. Since when doing incremental
