@@ -2008,34 +2008,27 @@ pub fn writeAtom(self: *MachO, atom: *Atom, match: MatchingSection) !void {
     const file_offset = sect.offset + sym.n_value - sect.addr;
     try atom.resolveRelocs(self);
     if (self.base.mach_port) |port| {
-        // log.info("port = {}", .{port});
-        // const addr: u64 = 0x100052000;
-        // var buf: [@sizeOf(u64)]u8 = undefined;
-        // const out = try std.os.darwin.vmRead(port, addr, &buf);
-        // log.info("value at 0x{x}: 0x{x}", .{ addr, mem.readIntLittle(u64, out[0..@sizeOf(u64)]) });
-
-        var addr = sym.n_value;
+        var base_addr = sym.n_value;
         var len: std.os.darwin.mach_vm_size_t = if (atom.code.items.len == 1) 2 else atom.code.items.len;
         var objname: std.os.darwin.mach_port_t = undefined;
         var info: std.os.darwin.vm_region_submap_info_64 = undefined;
         var count: std.os.darwin.mach_msg_type_number_t = std.os.darwin.VM_REGION_SUBMAP_SHORT_INFO_COUNT_64;
         var kern_res = std.os.darwin.mach_vm_region(
             port,
-            &addr,
+            &base_addr,
             &len,
             std.os.darwin.VM_REGION_BASIC_INFO_64,
             @ptrCast(std.os.darwin.vm_region_info_t, &info),
             &count,
             &objname,
         );
-        log.debug("info = {}", .{info});
         if (kern_res != 0) {
             log.warn("mach_vm_region failed with error: {d}", .{kern_res});
         }
 
         kern_res = std.os.darwin.mach_vm_protect(
             port,
-            addr,
+            sym.n_value,
             atom.code.items.len,
             @boolToInt(false),
             macho.VM_PROT_READ | macho.VM_PROT_WRITE | macho.VM_PROT_COPY,
@@ -2046,7 +2039,7 @@ pub fn writeAtom(self: *MachO, atom: *Atom, match: MatchingSection) !void {
 
         const nwritten = try std.os.darwin.vmWrite(
             port,
-            addr,
+            sym.n_value,
             atom.code.items,
             self.base.options.target.cpu.arch,
         );
@@ -2054,7 +2047,7 @@ pub fn writeAtom(self: *MachO, atom: *Atom, match: MatchingSection) !void {
 
         kern_res = std.os.darwin.mach_vm_protect(
             port,
-            addr,
+            sym.n_value,
             atom.code.items.len,
             @boolToInt(false),
             info.protection,
@@ -2244,146 +2237,6 @@ fn writePadding(self: *MachO, match: MatchingSection, size: usize, writer: anyty
 }
 
 fn writeAtoms(self: *MachO) !void {
-    if (self.base.mach_port) |port| {
-        // const kern_res = std.os.darwin.task_suspend(port);
-        // if (kern_res != 0) {
-        //     log.warn("task_suspend failed with error: {d}", .{kern_res});
-        // }
-        // const tar: u64 = 0x1000010b8;
-        // var buf: [8]u8 = undefined;
-        // mem.writeIntLittle(u64, &buf, tar);
-        // _ = try std.os.darwin.vmWrite(port, 0x100052028, &buf, .x86_64);
-        // return;
-        var threads: std.os.darwin.mach_port_array_t = undefined;
-        var tcount: std.os.darwin.mach_msg_type_number_t = undefined;
-        var kern_res = std.os.darwin.task_threads(port, &threads, &tcount);
-        if (kern_res != 0) {
-            log.warn("task_threads failed with error: {d}", .{kern_res});
-        }
-        log.warn("tcount = {}", .{tcount});
-        // assert(tcount == 1);
-        const tthreads = @ptrCast([*]std.os.darwin.mach_port_t, threads)[0..tcount];
-        for (tthreads) |tt| {
-            log.warn("tt = {}", .{tt});
-            var info: std.os.darwin.thread_basic_info = undefined;
-            var icount = std.os.darwin.THREAD_BASIC_INFO_COUNT;
-            kern_res = std.os.darwin.thread_info(
-                tt,
-                std.os.darwin.THREAD_BASIC_INFO,
-                @ptrCast(std.os.darwin.thread_info_t, &info),
-                &icount,
-            );
-            if (kern_res != 0) {
-                log.warn("thread_info failed with error: {d}", .{kern_res});
-            }
-            log.warn("info = {}", .{info});
-        }
-        const thread = tthreads[0];
-
-        var tstate: std.os.darwin.x86_64.thread_state = undefined;
-        var count: std.os.darwin.mach_msg_type_number_t = std.os.darwin.x86_64.THREAD_STATE_COUNT;
-        kern_res = std.os.darwin.thread_get_state(
-            thread,
-            std.os.darwin.x86_64.THREAD_STATE,
-            @ptrCast(std.os.darwin.thread_state_t, &tstate),
-            &count,
-        );
-        if (kern_res != 0) {
-            log.warn("thread_get_state failed with error: {d}", .{kern_res});
-        }
-        tstate.rflags |= 0x100;
-        kern_res = std.os.darwin.thread_set_state(
-            thread,
-            std.os.darwin.x86_64.THREAD_STATE,
-            @ptrCast(std.os.darwin.thread_state_t, &tstate),
-            count,
-        );
-        if (kern_res != 0) {
-            log.warn("thread_set_state failed with error: {d}", .{kern_res});
-        }
-        kern_res = std.os.darwin.thread_resume(thread);
-        if (kern_res != 0) {
-            log.warn("thread_resume failed with error: {d}", .{kern_res});
-        }
-
-        const taddr: u64 = 0x100001125;
-        // var addr: u64 = taddr;
-        var buf = [4]u8{ 0x7, 0xf, 0x5, 0x0 };
-        // var len: std.os.darwin.mach_vm_size_t = buf.len;
-        // var objname: std.os.darwin.mach_port_t = undefined;
-        // var info: std.os.darwin.vm_region_submap_info_64 = undefined;
-        // var count: std.os.darwin.mach_msg_type_number_t = std.os.darwin.VM_REGION_SUBMAP_SHORT_INFO_COUNT_64;
-        // var kern_res = std.os.darwin.mach_vm_region(
-        //     port,
-        //     &addr,
-        //     &len,
-        //     std.os.darwin.VM_REGION_BASIC_INFO_64,
-        //     @ptrCast(std.os.darwin.vm_region_info_t, &info),
-        //     &count,
-        //     &objname,
-        // );
-        // log.warn("info = {}", .{info});
-        // log.warn("offset = {x}", .{info.offset});
-        // if (kern_res != 0) {
-        //     log.warn("mach_vm_region failed with error: {d}", .{kern_res});
-        // }
-
-        kern_res = std.os.darwin.mach_vm_protect(
-            port,
-            taddr,
-            buf.len,
-            @boolToInt(false),
-            macho.VM_PROT_READ | macho.VM_PROT_WRITE | macho.VM_PROT_COPY,
-        );
-        if (kern_res != 0) {
-            log.warn("mach_vm_protect failed with error: {d}", .{kern_res});
-        }
-
-        _ = try std.os.darwin.vmWrite(
-            port,
-            taddr,
-            &buf,
-            self.base.options.target.cpu.arch,
-        );
-
-        kern_res = std.os.darwin.mach_vm_protect(
-            port,
-            taddr,
-            buf.len,
-            @boolToInt(false),
-            macho.VM_PROT_READ | macho.VM_PROT_EXECUTE,
-        );
-        if (kern_res != 0) {
-            log.warn("mach_vm_protect failed with error: {d}", .{kern_res});
-        }
-
-        var tmp: [7]u8 = undefined;
-        const out = try std.os.darwin.vmRead(port, taddr - 3, &tmp);
-        log.warn("{x}: {x}", .{ taddr - 3, std.fmt.fmtSliceHexLower(out) });
-
-        kern_res = std.os.darwin.thread_get_state(
-            thread,
-            std.os.darwin.x86_64.THREAD_STATE,
-            @ptrCast(std.os.darwin.thread_state_t, &tstate),
-            &count,
-        );
-        if (kern_res != 0) {
-            log.warn("thread_get_state failed with error: {d}", .{kern_res});
-        }
-        tstate.rflags ^= 0x100;
-        kern_res = std.os.darwin.thread_set_state(
-            thread,
-            std.os.darwin.x86_64.THREAD_STATE,
-            @ptrCast(std.os.darwin.thread_state_t, &tstate),
-            count,
-        );
-        if (kern_res != 0) {
-            log.warn("thread_set_state failed with error: {d}", .{kern_res});
-        }
-
-        return;
-    }
-
     var it = self.atoms.iterator();
     while (it.next()) |entry| {
         const match = entry.key_ptr.*;
@@ -2405,13 +2258,6 @@ fn writeAtoms(self: *MachO) !void {
             if (atom.prev) |prev| {
                 atom = prev;
             } else break;
-        }
-    }
-
-    if (self.base.mach_port) |port| {
-        const kern_res = std.os.darwin.task_resume(port);
-        if (kern_res != 0) {
-            log.warn("task_resume failed with error: {d}", .{kern_res});
         }
     }
 }
