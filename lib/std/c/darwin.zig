@@ -6,6 +6,9 @@ const native_arch = builtin.target.cpu.arch;
 const maxInt = std.math.maxInt;
 const iovec_const = std.os.iovec_const;
 
+pub const aarch64 = @import("darwin/aarch64.zig");
+pub const x86_64 = @import("darwin/x86_64.zig");
+
 const arch_bits = switch (native_arch) {
     .aarch64 => @import("darwin/aarch64.zig"),
     .x86_64 => @import("darwin/x86_64.zig"),
@@ -232,6 +235,69 @@ pub const vm_region_submap_info_64 = extern struct {
     user_wired_count: u16,
     pages_reusable: u32,
     object_id_full: vm_object_id_t,
+};
+
+pub const thread_act_t = mach_port_t;
+pub const thread_state_t = *natural_t;
+pub const mach_port_array_t = *mach_port_t;
+
+pub extern "c" fn task_threads(
+    target_task: mach_port_t,
+    init_port_set: *mach_port_array_t,
+    init_port_count: *mach_msg_type_number_t,
+) kern_return_t;
+pub extern "c" fn thread_get_state(
+    thread: thread_act_t,
+    flavor: thread_flavor_t,
+    state: thread_state_t,
+    count: *mach_msg_type_number_t,
+) kern_return_t;
+pub extern "c" fn thread_set_state(
+    thread: thread_act_t,
+    flavor: thread_flavor_t,
+    new_state: thread_state_t,
+    count: mach_msg_type_number_t,
+) kern_return_t;
+pub extern "c" fn thread_info(
+    thread: thread_act_t,
+    flavor: thread_flavor_t,
+    info: thread_info_t,
+    count: *mach_msg_type_number_t,
+) kern_return_t;
+pub extern "c" fn thread_resume(thread: thread_act_t) kern_return_t;
+
+pub const THREAD_BASIC_INFO = 3;
+pub const THREAD_BASIC_INFO_COUNT: mach_msg_type_number_t = @sizeOf(thread_basic_info) / @sizeOf(natural_t);
+
+pub const thread_flavor_t = natural_t;
+pub const thread_info_t = *integer_t;
+pub const time_value_t = time_value;
+pub const task_policy_flavor_t = natural_t;
+pub const task_policy_t = *integer_t;
+pub const policy_t = c_int;
+
+pub const time_value = extern struct {
+    seconds: integer_t,
+    microseconds: integer_t,
+};
+
+pub const thread_basic_info = extern struct {
+    // user run time
+    user_time: time_value_t,
+    // system run time
+    system_time: time_value_t,
+    // scaled cpu usage percentage
+    cpu_usage: integer_t,
+    // scheduling policy in effect
+    policy: policy_t,
+    // run state
+    run_state: integer_t,
+    // various flags
+    flags: integer_t,
+    // suspend count for thread
+    suspend_count: integer_t,
+    // number of seconds that thread has been sleeping
+    sleep_time: integer_t,
 };
 
 /// Cachability
