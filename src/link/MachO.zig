@@ -2014,12 +2014,31 @@ pub fn writeAtom(self: *MachO, atom: *Atom, match: MatchingSection) !void {
         // const out = try std.os.darwin.vmRead(port, addr, &buf);
         // log.info("value at 0x{x}: 0x{x}", .{ addr, mem.readIntLittle(u64, out[0..@sizeOf(u64)]) });
 
-        const kern_res = std.os.darwin.mach_vm_protect(
+        var addr = sym.n_value;
+        var len: std.os.darwin.mach_vm_size_t = if (atom.code.items.len == 1) 2 else atom.code.items.len;
+        var objname: std.os.darwin.mach_port_t = undefined;
+        var info: std.os.darwin.vm_region_submap_info_64 = undefined;
+        var count: std.os.darwin.mach_msg_type_number_t = std.os.darwin.VM_REGION_SUBMAP_SHORT_INFO_COUNT_64;
+        var kern_res = std.os.darwin.mach_vm_region(
             port,
-            sym.n_value,
+            &addr,
+            &len,
+            std.os.darwin.VM_REGION_BASIC_INFO_64,
+            @ptrCast(std.os.darwin.vm_region_info_t, &info),
+            &count,
+            &objname,
+        );
+        log.debug("info = {}", .{info});
+        if (kern_res != 0) {
+            log.warn("mach_vm_region failed with error: {d}", .{kern_res});
+        }
+
+        kern_res = std.os.darwin.mach_vm_protect(
+            port,
+            addr,
             atom.code.items.len,
             @boolToInt(false),
-            std.macho.VM_PROT_READ | std.macho.VM_PROT_WRITE | std.macho.VM_PROT_EXECUTE,
+            macho.VM_PROT_READ | macho.VM_PROT_WRITE | macho.VM_PROT_COPY,
         );
         if (kern_res != 0) {
             log.warn("mach_vm_protect failed with error: {d}", .{kern_res});
@@ -2027,12 +2046,22 @@ pub fn writeAtom(self: *MachO, atom: *Atom, match: MatchingSection) !void {
 
         const nwritten = try std.os.darwin.vmWrite(
             port,
-            sym.n_value,
+            addr,
             atom.code.items,
             self.base.options.target.cpu.arch,
         );
-        log.debug("code_len = {d}, nwritten = {d}", .{ atom.code.items.len, nwritten });
         assert(atom.code.items.len == nwritten);
+
+        kern_res = std.os.darwin.mach_vm_protect(
+            port,
+            addr,
+            atom.code.items.len,
+            @boolToInt(false),
+            info.protection,
+        );
+        if (kern_res != 0) {
+            log.warn("mach_vm_protect failed with error: {d}", .{kern_res});
+        }
     }
     log.debug("writing atom for symbol {s} at file offset 0x{x}", .{ self.getString(sym.n_strx), file_offset });
     try self.base.file.?.pwriteAll(atom.code.items, file_offset);
@@ -2216,10 +2245,15 @@ fn writePadding(self: *MachO, match: MatchingSection, size: usize, writer: anyty
 
 fn writeAtoms(self: *MachO) !void {
     if (self.base.mach_port) |port| {
-        const kern_res = std.os.darwin.task_suspend(port);
-        if (kern_res != 0) {
-            log.warn("task_suspend failed with error: {d}", .{kern_res});
-        }
+        // const kern_res = std.os.darwin.task_suspend(port);
+        // if (kern_res != 0) {
+        //     log.warn("task_suspend failed with error: {d}", .{kern_res});
+        // }
+        const tar: u64 = 0x1000010b8;
+        var buf: [8]u8 = undefined;
+        mem.writeIntLittle(u64, &buf, tar);
+        _ = try std.os.darwin.vmWrite(port, 0x100052028, &buf, .x86_64);
+        return;
     }
 
     var it = self.atoms.iterator();

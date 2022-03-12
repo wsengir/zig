@@ -125,6 +125,8 @@ pub extern "c" fn clock_get_time(clock_serv: clock_serv_t, cur_time: *mach_times
 
 pub const vm_map_t = mach_port_t;
 pub const vm_map_read_t = mach_port_t;
+pub const vm_region_flavor_t = c_int;
+pub const vm_region_info_t = *c_int;
 pub const mach_vm_address_t = usize;
 pub const vm_offset_t = usize;
 pub const mach_vm_size_t = u64;
@@ -154,6 +156,83 @@ pub extern "c" fn mach_vm_write(
     data: vm_offset_t,
     data_cnt: mach_msg_type_number_t,
 ) kern_return_t;
+pub extern "c" fn mach_vm_region(
+    target_task: vm_map_t,
+    address: *mach_vm_address_t,
+    size: *mach_vm_size_t,
+    flavor: vm_region_flavor_t,
+    info: vm_region_info_t,
+    info_cnt: *mach_msg_type_number_t,
+    object_name: *mach_port_t,
+) kern_return_t;
+
+pub const VM_REGION_BASIC_INFO_64 = 9;
+pub const VM_REGION_SUBMAP_SHORT_INFO_COUNT_64: mach_msg_type_number_t = @sizeOf(vm_region_submap_info_64) / @sizeOf(natural_t);
+
+pub const vm_inherit_t = u32;
+pub const memory_object_offset_t = u64;
+pub const vm_behavior_t = i32;
+
+pub const VM_INHERIT_SHARE: vm_inherit_t = 0;
+pub const VM_INHERIT_COPY: vm_inherit_t = 1;
+pub const VM_INHERIT_NONE: vm_inherit_t = 2;
+pub const VM_INHERIT_DONATE_COPY: vm_inherit_t = 3;
+pub const VM_INHERIT_DEFAULT = VM_INHERIT_COPY;
+
+pub const VM_BEHAVIOR_DEFAULT: vm_behavior_t = 0;
+pub const VM_BEHAVIOR_RANDOM: vm_behavior_t = 1;
+pub const VM_BEHAVIOR_SEQUENTIAL: vm_behavior_t = 2;
+pub const VM_BEHAVIOR_RSEQNTL: vm_behavior_t = 3;
+
+pub const VM_BEHAVIOR_WILLNEED: vm_behavior_t = 4;
+pub const VM_BEHAVIOR_DONTNEED: vm_behavior_t = 5;
+pub const VM_BEHAVIOR_FREE: vm_behavior_t = 6;
+pub const VM_BEHAVIOR_ZERO_WIRED_PAGES: vm_behavior_t = 7;
+pub const VM_BEHAVIOR_REUSABLE: vm_behavior_t = 8;
+pub const VM_BEHAVIOR_REUSE: vm_behavior_t = 9;
+pub const VM_BEHAVIOR_CAN_REUSE: vm_behavior_t = 10;
+pub const VM_BEHAVIOR_PAGEOUT: vm_behavior_t = 11;
+
+pub const vm32_object_id_t = u32;
+pub const vm_object_id_t = u64;
+
+pub const vm_region_submap_info_64 = extern struct {
+    // present across protection
+    protection: std.macho.vm_prot_t,
+    // max avail through vm_prot
+    max_protection: std.macho.vm_prot_t,
+    // behavior of map/obj on fork
+    inheritance: vm_inherit_t,
+    // offset into object/map
+    offset: memory_object_offset_t,
+    // user tag on map entry
+    user_tag: u32,
+    // only valid for objects
+    pages_resident: u32,
+    // only for objects
+    pages_shared_now_private: u32,
+    // only for objects
+    pages_swapped_out: u32,
+    // only for objects
+    pages_dirtied: u32,
+    // obj/map mappers, etc.
+    ref_count: u32,
+    // only for obj
+    shadow_depth: u16,
+    // only for obj
+    external_pager: u8,
+    // see enumeration
+    share_mode: u8,
+    // submap vs obj
+    is_submap: boolean_t,
+    // access behavior hint
+    behavior: vm_behavior_t,
+    // obj/map name, not a handle
+    object_id: vm32_object_id_t,
+    user_wired_count: u16,
+    pages_reusable: u32,
+    object_id_full: vm_object_id_t,
+};
 
 /// Cachability
 pub const MATTR_CACHE = 1;

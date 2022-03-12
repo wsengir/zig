@@ -366,11 +366,11 @@ pub const File = struct {
                         base.mach_port = port;
                     }
 
-                    switch (std.os.errno(std.os.darwin.ptrace(std.os.darwin.PT_ATTACHEXC, pid, null, 0))) {
-                        .SUCCESS => {},
-                        else => |errno| log.warn("ptrace failed: {s}", .{@tagName(errno)}),
-                    }
-                    log.debug("ptrace attached", .{});
+                    // switch (std.os.errno(std.os.darwin.ptrace(std.os.darwin.PT_ATTACHEXC, pid, null, 0))) {
+                    //     .SUCCESS => {},
+                    //     else => |errno| log.warn("ptrace failed: {s}", .{@tagName(errno)}),
+                    // }
+                    // log.debug("ptrace attached", .{});
                 }
                 base.file = try emit.directory.handle.createFile(emit.sub_path, .{
                     .truncate = false,
@@ -419,13 +419,13 @@ pub const File = struct {
                 //     }
                 //     base.mach_port = null;
                 // }
-                if (base.child_pid) |pid| {
-                    switch (std.os.errno(std.os.darwin.ptrace(std.os.darwin.PT_DETACH, pid, null, 0))) {
-                        .SUCCESS => {},
-                        else => |errno| log.warn("ptrace failed: {s}", .{@tagName(errno)}),
-                    }
-                    log.debug("ptrace detached", .{});
-                }
+                // if (base.child_pid) |pid| {
+                //     switch (std.os.errno(std.os.darwin.ptrace(std.os.darwin.PT_DETACH, pid, null, 0))) {
+                //         .SUCCESS => {},
+                //         else => |errno| log.warn("ptrace failed: {s}", .{@tagName(errno)}),
+                //     }
+                //     log.debug("ptrace detached", .{});
+                // }
 
                 f.close();
                 base.file = null;

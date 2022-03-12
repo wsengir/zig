@@ -1468,6 +1468,8 @@ pub const VM_PROT_WRITE: vm_prot_t = 0x2;
 /// VM execute permission
 pub const VM_PROT_EXECUTE: vm_prot_t = 0x4;
 
+pub const VM_PROT_COPY: vm_prot_t = 0x10;
+
 // The following are used to encode rebasing information
 pub const REBASE_TYPE_POINTER: u8 = 1;
 pub const REBASE_TYPE_TEXT_ABSOLUTE32: u8 = 2;
